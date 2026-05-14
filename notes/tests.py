@@ -67,3 +67,14 @@ class TenantIsolationTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         # 1 from setUp + 5 created here = 6
         self.assertEqual(response.data['count'], 6)
+
+    from unittest.mock import patch
+    @patch('notes.tasks.simulate_note_processing_task.delay')
+    def test_note_creation_triggers_celery_task(self, mock_task_delay):
+        self.client.force_authenticate(user=self.user2)
+        response = self.client.post('/api/notes/', {'title': 'Celery Note', 'content': 'Test Content'})
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Assert the Celery task was triggered with the correct Note ID
+        mock_task_delay.assert_called_once_with(response.data['id'])

@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from .models import Note
+from .tasks import simulate_note_processing_task
 
 class NoteService:
     @staticmethod
@@ -10,8 +11,13 @@ class NoteService:
         if not user.organisation:
             raise ValidationError("User does not belong to an organisation.")
             
-        return Note.objects.create(
+        note = Note.objects.create(
             author=user,
             organisation=user.organisation,
             **validated_data
         )
+        
+        # Trigger background task asynchronously
+        simulate_note_processing_task.delay(note.id)
+        
+        return note
