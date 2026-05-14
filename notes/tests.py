@@ -39,3 +39,8 @@ class TenantIsolationTests(TestCase):
         # Verify in DB
         note = Note.objects.get(id=response.data['id'])
         self.assertEqual(note.organisation, self.org2)
+
+    def test_unauthenticated_user_cannot_access_notes(self):
+        unauthenticated_client = APIClient()
+        response = unauthenticated_client.get('/api/notes/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
