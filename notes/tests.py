@@ -1,9 +1,10 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
 from users.models import User, Organisation
 from .models import Note
 
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True)
 class TenantIsolationTests(TestCase):
     def setUp(self):
         # Create Org 1 and User 1
