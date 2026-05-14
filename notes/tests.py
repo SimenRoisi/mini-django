@@ -25,8 +25,9 @@ class TenantIsolationTests(TestCase):
         response = self.client.get('/api/notes/')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['title'], 'Note 1')
+        # Because we added pagination, the response format changes:
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['title'], 'Note 1')
 
     def test_user_creates_note_in_their_org(self):
         self.client.force_authenticate(user=self.user2)
@@ -44,3 +45,25 @@ class TenantIsolationTests(TestCase):
         unauthenticated_client = APIClient()
         response = unauthenticated_client.get('/api/notes/')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_n_plus_one_query_optimization(self):
+        # Create 5 extra notes to ensure no N+1 queries occur
+        for i in range(5):
+            Note.objects.create(
+                title=f'Test Note {i}',
+                content='N+1 Test Content',
+                organisation=self.org1,
+                author=self.user1
+            )
+        
+        self.client.force_authenticate(user=self.user1)
+        
+        # We expect exactly 2 queries: 
+        # 1. The COUNT() query for pagination
+        # 2. The actual SELECT query joined with authors and organisations.
+        with self.assertNumQueries(2):
+            response = self.client.get('/api/notes/')
+            
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # 1 from setUp + 5 created here = 6
+        self.assertEqual(response.data['count'], 6)
