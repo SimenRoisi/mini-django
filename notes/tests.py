@@ -2,7 +2,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
 from users.models import User, Organisation
-from .models import Note
+from .models import Note, AuditLog
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
 class TenantIsolationTests(TestCase):
@@ -59,10 +59,11 @@ class TenantIsolationTests(TestCase):
         
         self.client.force_authenticate(user=self.user1)
         
-        # We expect exactly 2 queries: 
+        # We expect exactly 3 queries: 
         # 1. The COUNT() query for pagination
-        # 2. The actual SELECT query joined with authors and organisations.
-        with self.assertNumQueries(2):
+        # 2. The actual SELECT query joined with authors and organisations (select_related).
+        # 3. The prefetch query for tags (prefetch_related).
+        with self.assertNumQueries(3):
             response = self.client.get('/api/notes/')
             
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -77,5 +78,21 @@ class TenantIsolationTests(TestCase):
         
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         
-        # Assert the Celery task was triggered with the correct Note ID
         mock_task_delay.assert_called_once_with(response.data['id'])
+
+    def test_audit_log_signal(self):
+        # Ensure that saving a Note creates an AuditLog entry
+        initial_count = AuditLog.objects.count()
+        
+        note = Note.objects.create(
+            title='Signal Note',
+            content='Signal Content',
+            organisation=self.org1,
+            author=self.user1
+        )
+        
+        self.assertEqual(AuditLog.objects.count(), initial_count + 1)
+        # Get the latest log (assuming ordering by ID or created_at)
+        log = AuditLog.objects.order_by('-id').first()
+        self.assertEqual(log.note, note)
+        self.assertTrue(f"created by {self.user1.username}" in log.action)
